@@ -48,7 +48,7 @@ It ensures that when a local AI engine or pipeline is reloaded or restarted, it 
 
 ```bash
 # Clone the repository
-git clone [https://github.com/Recursive-Logic-Core/DriftBreak.git](https://github.com/Recursive-Logic-Core/DriftBreak.git)
+git clone https://github.com/Recursive-Logic-Core/DriftBreak.git
 cd DriftBreak
 
 # Install requirements
