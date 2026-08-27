@@ -43,7 +43,7 @@ You load the generated payload into your next session. By reducing context lengt
 1. Download **`DriftBreak.exe`** from the button above.
 2. Place it in any folder and paste your conversation log into `session_input.txt`.
 3. Run **`DriftBreak.exe`** and select your local backend node.
-4. Use the generated `pruned_context_payload.json` inside your session directory to resume execution with complete context memory.
+4. Use the generated `pruned_context_payload.json` inside your session directory to resume execution with structured continuity (State + Glossary + recent turns).
 
 ---
 
