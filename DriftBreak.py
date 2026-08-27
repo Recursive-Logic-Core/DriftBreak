@@ -1,11 +1,7 @@
-
 #!/usr/bin/env python3
 """
 DriftBreak: Local VRAM Governor & Memory-Recovery Engine
-Version: 1.4.0-GOVERNOR | Pure Local Execution
-
-Extracts long-term glossary terms, maintains state histories, unloads local models
-to actively free VRAM, and exports clean recovery payloads to prevent KI amnesia.
+Version: 1.5.0-GOLD-SESSIONS | Chronological Session Management
 """
 
 import os
@@ -36,7 +32,7 @@ except ImportError:
 # CONFIGURATION & CONSTANTS
 # =====================================================================
 
-VERSION = "1.4.0-GOVERNOR"
+VERSION = "1.5.0-GOLD-SESSIONS"
 DIRECTIVE_FILE = "directive.json"
 STATE_FILE = "driftbreak_state.json"
 GLOSSARY_FILE = "driftbreak_glossary.json"
@@ -44,7 +40,6 @@ PRUNED_PAYLOAD_FILE = "pruned_context_payload.json"
 
 MAX_STATE_SNAPSHOTS = 20
 VRAM_THRESHOLD_PERCENT = 90.0
-ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 DEFAULT_PORTS = {
     11434: "Ollama Local Engine",
@@ -56,7 +51,7 @@ DEFAULT_PORTS = {
 
 
 # =====================================================================
-# ATOMIC STORAGE UTILITY
+# ATOMIC STORAGE & SESSION DIRECTORY RESOLVER
 # =====================================================================
 
 class AtomicStorage:
@@ -89,12 +84,42 @@ class AtomicStorage:
         return default
 
 
+class SessionDirectoryManager:
+    """Handles auto-incrementing chronological session folders (e.g. 00001, 00002)."""
+
+    @staticmethod
+    def resolve_session_dir(mode: str, keep_prompts: int) -> str:
+        base_dir = "sessions"
+        os.makedirs(base_dir, exist_ok=True)
+
+        # Scan for existing numeric directories
+        existing_folders = []
+        for name in os.listdir(base_dir):
+            full_path = os.path.join(base_dir, name)
+            if os.path.isdir(full_path) and name.isdigit():
+                existing_folders.append(name)
+
+        existing_folders.sort(key=int)
+
+        # Trigger new incremented folder if requested or if wipe mode is chosen (keep_prompts == 0)
+        if not existing_folders or mode == "new" or keep_prompts == 0:
+            next_num = int(existing_folders[-1]) + 1 if existing_folders else 1
+            session_folder = f"{next_num:05d}"
+        else:
+            # Re-use the latest active directory for appends
+            session_folder = existing_folders[-1]
+
+        target_path = os.path.join(base_dir, session_folder)
+        os.makedirs(target_path, exist_ok=True)
+        return target_path
+
+
 # =====================================================================
-# HARDWARE MONITORING & VRAM-CHECK
+# HARDWARE MONITORING
 # =====================================================================
 
 class HardwareMonitor:
-    """Probes local NVIDIA GPU VRAM metrics and triggers warnings."""
+    """Probes local NVIDIA GPU VRAM metrics safely."""
 
     @staticmethod
     def get_gpu_telemetry() -> Optional[Dict[str, Any]]:
@@ -123,52 +148,15 @@ class HardwareMonitor:
             pass
         return None
 
-    @staticmethod
-    def check_vram_limit(telemetry: Dict[str, Any]) -> bool:
-        if not telemetry:
-            return False
-        percent = telemetry.get("vram_usage_percent", 0.0)
-        return percent >= VRAM_THRESHOLD_PERCENT
-
-
-# =====================================================================
-# ACTIVE BACKEND CONTROLLER (VRAM Unload)
-# =====================================================================
-
-class BackendController:
-    """Manages active backend model state, including VRAM unloading."""
-
-    @staticmethod
-    def unload_model(instance: Any, model: str) -> bool:
-        """Sends an active API call to free the VRAM of the selected engine."""
-        if instance.is_ollama:
-            try:
-                url = f"{instance.base_url}/api/generate"
-                payload = {
-                    "model": model,
-                    "keep_alive": 0
-                }
-                res = requests.post(url, json=payload, timeout=5.0)
-                if res.status_code == 200:
-                    print(f"[✓] Active VRAM Release: Ollama model '{model}' unloaded successfully.")
-                    return True
-            except Exception as e:
-                print(f"[!] Warning: Active VRAM release request failed: {e}")
-        else:
-            print(f"[*] Note: Manual VRAM release recommended for {instance.service_name} (No standardized unload API).")
-        return False
-
 
 # =====================================================================
 # BACKEND DISCOVERY
 # =====================================================================
 
 class AIInstance:
-    """Represents a local inference endpoint on loopback."""
+    """Represents a local loopback inference endpoint."""
 
     def __init__(self, port: int, service_name: str, host: str = "127.0.0.1"):
-        if host not in ALLOWED_HOSTS:
-            host = "127.0.0.1"
         self.port = port
         self.host = host
         self.service_name = service_name
@@ -209,10 +197,11 @@ class AIInstance:
 # =====================================================================
 
 class ConversationProcessor:
-    """Parses raw text and truncates conversational turns deterministically."""
+    """Parses raw chat exports and truncates conversations cleanly."""
 
     @staticmethod
     def parse_turns(raw_text: str) -> List[Dict[str, str]]:
+        # Handle JSON formatted message arrays
         try:
             json_data = json.loads(raw_text.strip())
             if isinstance(json_data, list):
@@ -228,6 +217,7 @@ class ConversationProcessor:
         except Exception:
             pass
 
+        # Parse line-by-line fallback
         lines = raw_text.splitlines()
         turns: List[Dict[str, str]] = []
         current_role = "user"
@@ -284,7 +274,7 @@ class ConversationProcessor:
 # =====================================================================
 
 class DirectiveResolver:
-    """Loads directive.json and prompts for checkpoint mode."""
+    """Handles local configuration logic and GUI/CLI onboarding."""
 
     @staticmethod
     def get_user_parameters() -> Dict[str, Any]:
@@ -308,7 +298,7 @@ class DirectiveResolver:
     def _run_gui(admin_directive: Optional[str]) -> Dict[str, Any]:
         root = tk.Tk()
         root.title("DriftBreak // VRAM Governor")
-        root.geometry("460x390")
+        root.geometry("480x420")
         root.attributes("-topmost", True)
         root.resizable(False, False)
 
@@ -320,11 +310,18 @@ class DirectiveResolver:
 
         frame_mode = tk.LabelFrame(root, text="State Snapshot Mode")
         frame_mode.pack(fill="x", padx=15, pady=5)
-        tk.Radiobutton(frame_mode, text="Create New State Baseline", variable=mode_var, value="new").pack(anchor="w")
-        tk.Radiobutton(frame_mode, text="Extend / Update Existing State", variable=mode_var, value="append").pack(anchor="w")
+        tk.Radiobutton(frame_mode, text="Create New State Baseline (Starts fresh folder)", variable=mode_var, value="new").pack(anchor="w")
+        tk.Radiobutton(frame_mode, text="Extend / Update Existing State (Uses current folder)", variable=mode_var, value="append").pack(anchor="w")
 
-        frame_keep = tk.LabelFrame(root, text="Keep Recent Turns in Payload (Context Buffer)")
+        frame_keep = tk.LabelFrame(root, text="Context Buffer (Conversational History)")
         frame_keep.pack(fill="x", padx=15, pady=5)
+        
+        hint = (
+            "0 = Complete Reset (empty payload, new session folder; glossary only archived as file).\n"
+            "1-15 = Keep State + Glossary + that many recent turns in the payload."
+        )
+        tk.Label(frame_keep, text=hint, font=("Arial", 8, "italic"), fg="#555", justify="left").pack(anchor="w", padx=10, pady=2)
+        
         entry_keep = tk.Entry(frame_keep, textvariable=keep_var, width=8)
         entry_keep.pack(anchor="w", padx=10, pady=5)
 
@@ -350,7 +347,7 @@ class DirectiveResolver:
             result["confirmed"] = True
             root.destroy()
 
-        tk.Button(root, text="Execute Checkpoint & Flush VRAM", command=on_submit, bg="#2563eb", fg="white", height=2).pack(fill="x", padx=15, pady=10)
+        tk.Button(root, text="Execute Checkpoint", command=on_submit, bg="#2563eb", fg="white", height=2).pack(fill="x", padx=15, pady=10)
         root.mainloop()
 
         if not result["confirmed"]:
@@ -362,13 +359,17 @@ class DirectiveResolver:
     def _run_cli(admin_directive: Optional[str]) -> Dict[str, Any]:
         print("\n--- Configuration ---")
         mode = "append" if input("Extend Existing State? (y/N): ").strip().lower() == "y" else "new"
+        
+        print("\nContext Buffer [0-15]:")
+        print("  0    = Complete VRAM Reset (Keeps state/glossary baseline only)")
+        print("  1-15 = Keep specified number of recent conversational turns")
         try:
-            keep = int(input("Turns to keep in buffer (Default: 5): ").strip() or "5")
+            keep = int(input("Turns to keep (Default: 5): ").strip() or "5")
             keep = max(0, min(15, keep))
         except ValueError:
             keep = 5
 
-        user_focus = input("Focus directive (Optional): ").strip()
+        user_focus = input("\nFocus directive (Optional): ").strip()
         final_focus = admin_directive if admin_directive else ""
         if user_focus:
             final_focus = f"{final_focus} | {user_focus}".strip(" |")
@@ -381,11 +382,11 @@ class DirectiveResolver:
 # =====================================================================
 
 class StateGovernor:
-    """Manages prompt construction, model inference, and persistence of state and glossary."""
+    """Manages prompt construction, local model inference, and output mapping."""
 
     @staticmethod
-    def load_existing_state() -> List[Dict[str, Any]]:
-        history = AtomicStorage.load_json(STATE_FILE, default=[])
+    def load_existing_state(state_path: str) -> List[Dict[str, Any]]:
+        history = AtomicStorage.load_json(state_path, default=[])
         if isinstance(history, list):
             return history
         if isinstance(history, dict):
@@ -393,8 +394,8 @@ class StateGovernor:
         return []
 
     @staticmethod
-    def load_existing_glossary() -> List[Dict[str, str]]:
-        data = AtomicStorage.load_json(GLOSSARY_FILE, default={"entries": []})
+    def load_existing_glossary(glossary_path: str) -> List[Dict[str, str]]:
+        data = AtomicStorage.load_json(glossary_path, default={"entries": []})
         return data.get("entries", []) if isinstance(data, dict) else []
 
     @staticmethod
@@ -445,16 +446,31 @@ class StateGovernor:
         }
 
     @staticmethod
-    def execute_extraction(instance: AIInstance, model: str, raw_text: str, config: Dict[str, Any]):
+    def execute_extraction(instance: AIInstance, model: str, raw_text: str, config: Dict[str, Any], session_dir: str) -> str:
+        # Dynamically assign session-specific output files inside the chronological folder
+        state_path = os.path.join(session_dir, STATE_FILE)
+        glossary_path = os.path.join(session_dir, GLOSSARY_FILE)
+        payload_path = os.path.join(session_dir, PRUNED_PAYLOAD_FILE)
+        
+        # Chronological incremental plain text backups (Prevents overwriting past logs)
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        raw_backup_path = os.path.join(session_dir, f"raw_session_backup_{timestamp_str}.txt")
+
+        # Save current raw conversation chunk safely
+        with open(raw_backup_path, "w", encoding="utf-8") as f:
+            f.write(raw_text)
+
         all_turns = ConversationProcessor.parse_turns(raw_text)
         retained_turns = ConversationProcessor.prune_turns(all_turns, config["keep_prompts"])
 
-        old_history = StateGovernor.load_existing_state()
+        old_history = StateGovernor.load_existing_state(state_path)
+        existing_glossary = StateGovernor.load_existing_glossary(glossary_path)
+        
         reference_state = None
         if config["mode"] == "append" and old_history and isinstance(old_history[-1], dict):
             reference_state = old_history[-1].get("state")
 
-        # Kognitiver Extraktions-Prompt
+        # Strict extraction instructions (Ensures model-level separation of concerns)
         system_instruction = (
             "### SYSTEM INSTRUCTION ###\n"
             "You are DriftBreak's deterministic Recovery Engine.\n"
@@ -477,15 +493,21 @@ class StateGovernor:
             "Output ONLY valid JSON."
         )
 
-        prompt_payload = (
-            "### SOURCE CONVERSATION DATA ###\n"
-            f"{raw_text}\n"
-            "### END SOURCE DATA ###\n\n"
-            "Generate JSON Recovery Object now:"
-        )
-
+        prompt_payload_parts = ["### EXTRACTION CONTEXT ###"]
         if config["focus"]:
-            prompt_payload = f"Focus Priority: {config['focus']}\n\n" + prompt_payload
+            prompt_payload_parts.append(f"Focus Priority: {config['focus']}")
+        if reference_state:
+            prompt_payload_parts.append(f"Prior State Baseline: {json.dumps(reference_state, ensure_ascii=False)}")
+        
+        # FEEDBACK LOOP: We inject the existing glossary back into the prompt so the AI knows
+        # what is already defined, allowing it to modify, extend, or keep existing terms correctly.
+        if existing_glossary:
+            prompt_payload_parts.append(f"Prior Glossary Baseline: {json.dumps(existing_glossary, ensure_ascii=False)}")
+        
+        prompt_payload_parts.append(f"--- SOURCE CONVERSATION DATA ---\n{raw_text}\n--- END DATA ---")
+        prompt_payload_parts.append("### TASK ###\nExtract current verified state JSON matching the requested structure:")
+        
+        prompt_payload = "\n\n".join(prompt_payload_parts)
 
         print(f"[*] Dispatching extraction to {instance.base_url} (Model: {model})...")
 
@@ -526,7 +548,7 @@ class StateGovernor:
         extracted_state = normalized["state"]
         extracted_glossary = normalized["glossary"]
 
-        # 1. State Snapshot-Historie verwalten und speichern
+        # 1. State Snapshot History persistence
         snapshot = {
             "snapshot_id": uuid.uuid4().hex[:12],
             "timestamp": datetime.now().isoformat(),
@@ -539,25 +561,30 @@ class StateGovernor:
         full_archive.append(snapshot)
         full_archive = full_archive[-MAX_STATE_SNAPSHOTS:]
 
-        AtomicStorage.write_json(STATE_FILE, full_archive)
-        print(f"[💾] State history archived ({len(full_archive)} snapshots) -> {STATE_FILE}")
+        AtomicStorage.write_json(state_path, full_archive)
+        print(f"[💾] State history archived ({len(full_archive)} snapshots) -> {state_path}")
 
-        # 2. Glossary-Merging und Speicherung
-        existing_glossary = StateGovernor.load_existing_glossary()
+        # 2. Glossary merging and persistence
         merged_glossary = StateGovernor.merge_glossaries(existing_glossary, extracted_glossary)
-        AtomicStorage.write_json(GLOSSARY_FILE, {"entries": merged_glossary})
-        print(f"[📖] Glossary updated ({len(merged_glossary)} terms) -> {GLOSSARY_FILE}")
+        AtomicStorage.write_json(glossary_path, {"entries": merged_glossary})
+        print(f"[📖] Glossary updated ({len(merged_glossary)} terms) -> {glossary_path}")
 
-        # 3. Clean Pruned Payload Generation (Wiederanlauf-Paket)
-        injection_content = (
-            f"[DRIFTBREAK RECOVERY CHECKPOINT]\n\n"
-            f"STATE:\n{json.dumps(extracted_state, indent=2, ensure_ascii=False)}\n\n"
-            f"GLOSSARY:\n{json.dumps(merged_glossary, indent=2, ensure_ascii=False)}"
-        )
+        # 3. Clean Pruned Payload Generation (Model remains loaded/warm)
+        if config["keep_prompts"] == 0:
+            # Absolute zero start - No prior baseline or glossary loaded in recovery messages
+            final_messages = []
+            print("[✓] Zero-VRAM Baseline: Cleared all history. Starting totally fresh.")
+        else:
+            # Active context baseline injection (Glossary + State + Recent Turns)
+            injection_content = (
+                f"[DRIFTBREAK RECOVERY CHECKPOINT]\n\n"
+                f"STATE:\n{json.dumps(extracted_state, indent=2, ensure_ascii=False)}\n\n"
+                f"GLOSSARY:\n{json.dumps(merged_glossary, indent=2, ensure_ascii=False)}"
+            )
 
-        final_messages = [
-            {"role": "system", "content": injection_content}
-        ] + retained_turns
+            final_messages = [
+                {"role": "system", "content": injection_content}
+            ] + retained_turns
 
         pruned_payload = {
             "metadata": {
@@ -567,8 +594,9 @@ class StateGovernor:
             "messages": final_messages
         }
 
-        AtomicStorage.write_json(PRUNED_PAYLOAD_FILE, pruned_payload)
-        print(f"[✓] Recovery Payload generated -> {PRUNED_PAYLOAD_FILE}")
+        AtomicStorage.write_json(payload_path, pruned_payload)
+        print(f"[✓] Recovery Payload generated -> {payload_path}")
+        return raw_backup_path
 
 
 # =====================================================================
@@ -588,15 +616,8 @@ class DriftBreakApp:
 
         os.system('cls' if os.name == 'nt' else 'clear')
         print("==========================================================")
-        print(f"  DRIFTBREAK // VRAM GOVERNOR & RECOVERY ENGINE (v{VERSION})")
+        print(f"  DRIFTBREAK // VRAM CONTEXT GOVERNOR (v{VERSION})")
         print("==========================================================")
-
-        gpu = HardwareMonitor.get_gpu_telemetry()
-        if gpu:
-            print(f"[Hardware] GPU: {gpu['gpu_name']} | VRAM: {gpu['vram_used_mb']:.0f}/{gpu['vram_total_mb']:.0f} MB ({gpu['vram_usage_percent']:.1f}%) | Load: {gpu['gpu_util_percent']:.0f}%")
-            if HardwareMonitor.check_vram_limit(gpu):
-                print(f"[WARN] VRAM utilization is above {VRAM_THRESHOLD_PERCENT}%. Unload recommended.")
-            print("----------------------------------------------------------")
 
         # Scan local ports
         discovered = []
@@ -611,7 +632,7 @@ class DriftBreakApp:
             print("    [2] Exit Application")
             c = input("\nSelect [1-2] (Default: 1): ").strip()
             if c == "2":
-                print("\n[*] Application terminated by user. No action performed.")
+                print("\n[*] Application terminated by user.")
                 sys.exit(0)
 
             target = AIInstance(11434, "Ollama Fallback")
@@ -647,21 +668,20 @@ class DriftBreakApp:
 
         # Configuration & Execution
         config = DirectiveResolver.get_user_parameters()
-        StateGovernor.execute_extraction(target, model, session_text, config)
+        
+        # Resolve target session directory (chronological ordering)
+        session_dir = SessionDirectoryManager.resolve_session_dir(config["mode"], config["keep_prompts"])
+        print(f"[*] Target Session Directory: {session_dir}")
 
-        # Aktive VRAM-Freigabe nach erfolgreichem Checkpoint
-        print("\n[*] Initializing active VRAM release...")
-        released = BackendController.unload_model(target, model)
+        history_path = StateGovernor.execute_extraction(target, model, session_text, config, session_dir)
 
         print("\n==========================================================")
-        print("  RECOVERY DUMP READY")
-        print(f"  1. State History: {STATE_FILE}")
-        print(f"  2. Glossary:      {GLOSSARY_FILE}")
-        print(f"  3. Payload:       {PRUNED_PAYLOAD_FILE}")
-        if released:
-            print("  4. Backend:       VRAM release requested successfully")
-        else:
-            print("  4. Backend:       No automatic VRAM release confirmed")
+        print("  RECOVERY DUMP READY // CONTEXT TRUNCATED")
+        print(f"  All session artifacts saved in: {session_dir}")
+        print(f"  1. Raw History Backup: {history_path}")
+        print(f"  2. State History:      {os.path.join(session_dir, STATE_FILE)}")
+        print(f"  3. Glossary:           {os.path.join(session_dir, GLOSSARY_FILE)}")
+        print(f"  4. Recovery Payload:   {os.path.join(session_dir, PRUNED_PAYLOAD_FILE)}")
         print("==========================================================")
 
 
