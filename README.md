@@ -51,7 +51,7 @@ You load the generated payload into your next session. By reducing context lengt
 
 ```bash
 # Clone the repository
-git clone [https://github.com/Recursive-Logic-Core/DriftBreak.git](https://github.com/Recursive-Logic-Core/DriftBreak.git)
+git clone https://github.com/Recursive-Logic-Core/DriftBreak.git
 cd DriftBreak
 
 # Install requirements
