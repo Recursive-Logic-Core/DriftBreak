@@ -59,3 +59,8 @@ pip install requests
 
 # Run application
 python DriftBreak.py
+```
+
+## Contact & Architecture Core
+Developed and maintained by **Architect M.M.M.**  
+Direct contact: `arch_mmm@proton.me`
