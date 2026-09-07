@@ -18,9 +18,8 @@
 <p><em>Single-file standalone application — No Python installation required.</em></p>
 
 </div>
-**Architecture & Protocol Specification**
-
-Designed and specified by Architect M.M.M. The Python implementation serves strictly as an execution runtime artifact.
+> **Architecture & Protocol Specification**  
+> Designed and specified by Architect M.M.M. The Python implementation serves strictly as an execution runtime artifact.
 
 ---
 
