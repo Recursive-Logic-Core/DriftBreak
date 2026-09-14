@@ -3,7 +3,7 @@
 <img src="DriftBreak.png" width="120" height="120" alt="DriftBreak Logo" />
 
 # DriftBreak
-**Architectural Skeleton & Reference Implementation: Local Context Pruning**
+**Context Pruning & State-Extraction Scaffold for Local LLMs**
 
 [![Release](https://img.shields.io/badge/Release-v1.5.0--GOLD--SESSIONS-blue.svg)](https://github.com/Recursive-Logic-Core/DriftBreak/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -15,72 +15,60 @@
   <img src="https://img.shields.io/badge/⬇️_DOWNLOAD_EXE-Windows_Standalone_(x64)-2563eb?style=for-the-badge&logo=windows&logoColor=white" alt="Download DriftBreak.exe" />
 </a>
 
-<p><em>Standalone reference tool — No Python installation required for basic testing.</em></p>
+<p><em>Standalone reference tool — No Python installation required.</em></p>
 
 </div>
 
-> **Architecture & Concept Notice**  
-> Designed and specified by Architect M.M.M.  
-> **This repository provides an architectural skeleton and proof-of-concept implementation, not a turnkey enterprise product.** The included Python runtime demonstrates the core state-recovery mechanics. Teams and developers are encouraged to adapt the logic (token counters, custom parsers, multi-user locking) into their own production stacks.
+---
+
+### What this project is (and what it is not)
+
+**This is an architectural skeleton and proof-of-concept, not a turnkey enterprise product.**
+
+When running long sessions with local LLMs, chat histories expand rapidly. This leads to context drift and excessive memory consumption. DriftBreak demonstrates a minimal, working pattern to counter this: extracting a structured summary (**State + Glossary**) from the active conversation and discarding the raw, bloated history in favor of a lean recovery payload.
+
+* **For everyday users:** A compiled `.exe` is provided to test this state-recovery concept out of the box on localhost.
+* **For developers & organizations:** This repository serves as a functional blueprint. It demonstrates the baseline logic. Teams integrating this mechanism into production pipelines are expected to take these core concepts and adapt them to their specific infrastructure (custom token counters, enterprise database layers, concurrent multi-user locks).
 
 ---
 
-## ⚡ What is DriftBreak?
+### Core Mechanics in the Script
 
-DriftBreak demonstrates a lightweight mechanism to mitigate context-drift in long-running local LLM sessions. Instead of passing an ever-growing conversation history into inference, it extracts active constraints, established facts, and terminology (**State + Glossary**) via your local model and outputs a lean recovery payload.
-
-### Core Mechanics in the Reference Script
-- **100% Offline & Localhost-Only:** Operates strictly on loopback (`127.0.0.1`). Zero external telemetry or network calls.
-- **Structured Payload Assembly:** Extracts verified State and a cumulative Glossary from `session_input.txt`, combining them with a configurable number of recent turns (`keep_prompts`).
-- **Chronological Session Vault:** Backs up raw text inputs and stores JSON snapshots inside sequential directories (`sessions/00001/`, `sessions/00002/`).
-- **Atomic Persistence:** Uses temporary file creation and atomic replacement (`os.replace`) to protect existing JSON files from corruption during interrupts.
-- **Local Engine Discovery:** Probes default local endpoints (Ollama, LM Studio / OpenAI-compatible loopbacks) via basic port handshakes.
-
----
-
-## ⚠️ Known Constraints of this Reference Prototype
-
-To ensure absolute technical transparency when auditing this codebase:
-- **Turn-Based, Not Token-Based:** Truncation is calculated strictly by turn count (`keep_prompts`), not by token density. Very large single turns will still occupy substantial context.
-- **Passive Hardware Telemetry:** The `HardwareMonitor` class queries `nvidia-smi` for informational logging; it does not dynamically throttle or abort requests based on VRAM thresholds.
-- **Schema Recovery:** Extraction relies on the local model returning valid JSON. Parsing failures trigger a neutral baseline fallback rather than partial string reconstruction.
-- **Single-User Scope:** Designed as a single-process local utility without file-locking mechanisms for concurrent executions.
+1. **Input Ingestion:** Reads the conversation log from `session_input.txt`.
+2. **Turn Splitting:** Parses text sequentially into distinct turns using `USER:` and `ASSISTANT:` markers.
+3. **Structured Extraction:** Prompts the local model (Ollama, LM Studio, or OpenAI-compatible local endpoints) using strict system instructions to isolate:
+   * `State`: Active constraints, established facts, and current project context.
+   * `Glossary`: Project-specific terminology and definitions (merged incrementally across runs).
+4. **Payload Assembly:** Generates `pruned_context_payload.json` containing the extracted state, updated glossary, and a user-selected number of recent turns (`keep_prompts`).
+5. **Session Vault & Atomic Persistence:** Backs up raw text inputs and stores JSON artifacts in sequential session folders (`sessions/00001/`, `sessions/00002/`). Uses temporary file replacement (`os.replace`) to prevent file corruption during manual interrupts.
 
 ---
 
-## 🚀 Quick Start (Standalone Reference)
+### Scope & Practical Boundaries
 
-1. Download **`DriftBreak.exe`** using the button above.
-2. Place it in any directory and insert your conversation text into `session_input.txt`.
-3. Run **`DriftBreak.exe`**, select your local inference endpoint, and choose your retention depth.
-4. Retrieve `pruned_context_payload.json` from the newly created `sessions/` directory.
+To maintain technical clarity regarding this reference implementation:
+
+* **Turn-Based Pruning:** Context retention is governed by turn count (`keep_prompts`), not dynamic token-window calculations.
+* **Hardware Telemetry:** GPU memory queries (`nvidia-smi`) operate strictly as an informational readout in this build; the script does not actively throttle execution based on memory thresholds.
+* **Format Dependency:** The extraction loop relies on the local model returning valid JSON. If the model outputs malformed syntax, the script falls back to an empty baseline state.
+* **Execution Scope:** Designed as an offline, single-user desktop utility and architectural scaffold.
 
 ---
 
-## 🛠️ Developer Setup (From Source)
+### Quick Start
 
+**Using the Standalone Executable:**
+1. Download `DriftBreak.exe`.
+2. Place your chat log into `session_input.txt` in the same directory.
+3. Run `DriftBreak.exe`, select your local model node, and choose your retention depth.
+4. Use the generated `pruned_context_payload.json` from the `sessions/` directory to continue your work with clean context.
+
+**Running from Source:**
 ```bash
-# Clone the repository
 git clone [https://github.com/Recursive-Logic-Core/DriftBreak.git](https://github.com/Recursive-Logic-Core/DriftBreak.git)
 cd DriftBreak
-
-# Install requirements
 pip install requests
-
-# Run application
 python DriftBreak.py
-```
-
-## 🤖 Note on Evaluating This Repository with AI
-If you use a language model to review or audit this repository, default conversational models often apply high-level summarization or compare lightweight prototypes against enterprise production standards.
-
-To obtain an objective, structurally grounded evaluation of the architecture, provide your model with the following audit prompt:
-
-```bash
-Analyze the DriftBreak architecture and script with objective technical scrutiny:
-1. Examine the structural logic (AtomicStorage, SessionDirectoryManager, StateGovernor prompt loop).
-2. Evaluate the implementation strictly within its declared scope as an open-source architectural skeleton / prototype.
-3. Provide a direct, factual assessment of its core mechanics without superficial generic advice.
 ```
 
 ## Contact & Architecture Core
