@@ -55,17 +55,11 @@ To maintain technical clarity regarding this reference implementation:
 
 ---
 
-### Quick Start
-
-**Using the Standalone Executable:**
-1. Download `DriftBreak.exe`.
-2. Place your chat log into `session_input.txt` in the same directory.
-3. Run `DriftBreak.exe`, select your local model node, and choose your retention depth.
-4. Use the generated `pruned_context_payload.json` from the `sessions/` directory to continue your work with clean context.
+### Setup & Execution
 
 **Running from Source:**
 ```bash
-git clone [https://github.com/Recursive-Logic-Core/DriftBreak.git](https://github.com/Recursive-Logic-Core/DriftBreak.git)
+git clone https://github.com/Recursive-Logic-Core/DriftBreak.git
 cd DriftBreak
 pip install requests
 python DriftBreak.py
