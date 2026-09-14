@@ -1,4 +1,4 @@
-<div align="center">
+ <div align="center">
 
 <img src="DriftBreak.png" width="120" height="120" alt="DriftBreak Logo" />
 
@@ -9,7 +9,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Localhost Only](https://img.shields.io/badge/Network-127.0.0.1%20Only-green.svg)]()
 
-<br />
 </div>
 
 ---
