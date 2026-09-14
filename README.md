@@ -10,13 +10,6 @@
 [![Localhost Only](https://img.shields.io/badge/Network-127.0.0.1%20Only-green.svg)]()
 
 <br />
-
-<a href="https://github.com/Recursive-Logic-Core/DriftBreak/releases/latest/download/DriftBreak.exe">
-  <img src="https://img.shields.io/badge/⬇️_DOWNLOAD_EXE-Windows_Standalone_(x64)-2563eb?style=for-the-badge&logo=windows&logoColor=white" alt="Download DriftBreak.exe" />
-</a>
-
-<p><em>Standalone reference tool — No Python installation required.</em></p>
-
 </div>
 
 ---
