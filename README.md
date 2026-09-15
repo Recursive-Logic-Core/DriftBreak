@@ -19,7 +19,7 @@
 
 When running long sessions with local LLMs, chat histories expand rapidly. This leads to context drift and excessive memory consumption. DriftBreak demonstrates a minimal, working pattern to counter this: extracting a structured summary (**State + Glossary**) from the active conversation and discarding the raw, bloated history in favor of a lean recovery payload.
 
-* **For everyday users:** A compiled `.exe` is provided to test this state-recovery concept out of the box on localhost.
+* **For engineers & researchers:** This repository serves as a minimal functional blueprint. It demonstrates baseline deterministic state recovery for local inference endpoints (Ollama / LM Studio).
 * **For developers & organizations:** This repository serves as a functional blueprint. It demonstrates the baseline logic. Teams integrating this mechanism into production pipelines are expected to take these core concepts and adapt them to their specific infrastructure (custom token counters, enterprise database layers, concurrent multi-user locks).
 
 ---
